@@ -434,9 +434,12 @@
       <div class="done" id="done">
         <h3 data-i18n="doneH3"></h3>
         <p id="done-msg"></p>
-        <p data-i18n="copyHint"></p>
-        <textarea id="summary" readonly></textarea>
-        <button class="copy-btn" id="copy" data-i18n="copyBtn"></button>
+        <div id="fallback">
+          <button class="submit" id="send-mail" data-i18n="sendBtn"></button>
+          <p data-i18n="copyHint"></p>
+          <textarea id="summary" readonly></textarea>
+          <button class="copy-btn" id="copy" data-i18n="copyBtn"></button>
+        </div>
       </div>
     </div>
   </section>
@@ -498,9 +501,12 @@
       err: "日時・お名前・事業名・メールアドレスをご入力ください。",
       submit: "この内容で申し込む",
       doneH3: "お申し込みありがとうございます",
-      doneMail: "申込内容を記載したメールが開きます。そのまま送信してください。送信後、24時間以内にカレンダー招待をお送りします。",
+      sending: "送信中…",
+      doneSent: "申込内容を受け付けました。24時間以内に、ご記入いただいたメールアドレス宛にカレンダー招待をお送りします。",
+      doneMail: "送信がうまくいきませんでした。下のボタンを押すと、申込内容が入ったメールが開きます。そのまま送信してください。ご送信後、24時間以内にカレンダー招待をお送りします。",
       doneCopy: "下記の申込内容をコピーして、ご案内したメールアドレスまたはLINEにお送りください。確認後、カレンダー招待をお送りします。",
-      copyHint: "メールが開かない場合は、下記をコピーしてお送りください。",
+      sendBtn: "メールアプリを開いて送信する",
+      copyHint: "メールアプリが使えない場合は、下記をコピーして REDACTED_EMAIL までお送りください。",
       copyBtn: "内容をコピー",
       copied: "コピーしました",
       copyFail: "選択してコピーしてください",
@@ -560,9 +566,12 @@
       err: "Please fill in the date, time, your name, business name, and email address.",
       submit: "Submit application",
       doneH3: "Thank you for applying",
-      doneMail: "An email with your application details will open — just hit send. You'll receive a calendar invite within 24 hours.",
+      sending: "Sending…",
+      doneSent: "We've received your application. You'll get a calendar invite at the email address you entered within 24 hours.",
+      doneMail: "Automatic sending didn't work. Press the button below to open an email with your application details — just hit send. You'll receive a calendar invite within 24 hours.",
       doneCopy: "Please copy the application below and send it to us by email or LINE. Once confirmed, you'll receive a calendar invite.",
-      copyHint: "If your email app didn't open, copy the text below and send it to us.",
+      sendBtn: "Open email app to send",
+      copyHint: "If you can't use an email app, copy the text below and send it to REDACTED_EMAIL.",
       copyBtn: "Copy details",
       copied: "Copied",
       copyFail: "Please select and copy manually",
@@ -694,23 +703,64 @@
       t("sumNote") + ": " + (note || "—")
     ];
     var body = lines.join("\n");
+    var subject = t("mailSubject") + biz + " — " + selDate.value + " " + selTime;
 
-    document.getElementById("form").style.display = "none";
-    var done = document.getElementById("done");
-    done.style.display = "block";
-    document.getElementById("summary").value = body;
-    document.getElementById("spots-n").textContent = Math.max(0, SPOTS_LEFT - 1);
+    var submitBtn = document.querySelector("#form .submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = t("sending");
 
-    if (BOOKING_EMAIL) {
-      document.getElementById("done-msg").textContent = t("doneMail");
-      var subject = t("mailSubject") + biz + " — " + selDate.value + " " + selTime;
-      location.href = "mailto:" + BOOKING_EMAIL +
-        "?subject=" + encodeURIComponent(subject) +
-        "&body=" + encodeURIComponent(body);
-    } else {
-      document.getElementById("done-msg").textContent = t("doneCopy");
+    function showDone(sent) {
+      document.getElementById("form").style.display = "none";
+      var done = document.getElementById("done");
+      done.style.display = "block";
+      document.getElementById("spots-n").textContent = Math.max(0, SPOTS_LEFT - 1);
+      if (sent) {
+        document.getElementById("done-msg").textContent = t("doneSent");
+        document.getElementById("fallback").style.display = "none";
+      } else {
+        document.getElementById("done-msg").textContent = t("doneMail");
+        document.getElementById("summary").value = body;
+        document.getElementById("send-mail").dataset.href = "mailto:" + BOOKING_EMAIL +
+          "?subject=" + encodeURIComponent(subject) +
+          "&body=" + encodeURIComponent(body);
+      }
+      done.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-    done.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    var payload = {
+      _subject: subject,
+      _template: "table",
+      _captcha: "false",
+      slot: selDate.value + " " + selTime + " (60 min, JST)",
+      name: name,
+      business: biz,
+      link: link || "-",
+      email: email,
+      pain_points: pain || "-",
+      notes: note || "-",
+      page_language: lang
+    };
+
+    var timeout = new Promise(function (_, rej) { setTimeout(rej, 8000); });
+    Promise.race([
+      fetch("https://formsubmit.co/ajax/" + BOOKING_EMAIL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(payload)
+      }),
+      timeout
+    ]).then(function (r) {
+      if (!r || !r.ok) throw new Error("bad status");
+      return r.json();
+    }).then(function () {
+      showDone(true);
+    }).catch(function () {
+      showDone(false);
+    });
+  });
+
+  document.getElementById("send-mail").addEventListener("click", function () {
+    if (this.dataset.href) location.href = this.dataset.href;
   });
 
   document.getElementById("copy").addEventListener("click", function () {
