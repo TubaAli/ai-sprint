@@ -752,7 +752,8 @@
     ]).then(function (r) {
       if (!r || !r.ok) throw new Error("bad status");
       return r.json();
-    }).then(function () {
+    }).then(function (data) {
+      if (String(data.success) !== "true") throw new Error("relay refused");
       showDone(true);
     }).catch(function () {
       showDone(false);
